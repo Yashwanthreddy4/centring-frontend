@@ -579,7 +579,11 @@ function Customers() {
   );
 }
 
+
 // ── Rentals ──────────────────────────────────────────────────
+// equipLines = [{ equipment_id, qty, daily_rate }]
+const emptyLine = () => ({ equipment_id: '', qty: 1, daily_rate: '' });
+
 function Rentals() {
   const { t } = useLang();
   const { isOwner } = useAuth();
@@ -591,34 +595,73 @@ function Rentals() {
   const [modal, setModal] = useState(null);
   const [retModal, setRetModal] = useState(null);
   const [form, setForm] = useState({
-    customer_id: '', equipment_id: '', site: '',
-    date_out: today(), return_date: '', daily_rate: '', deposit: '', notes: ''
+    customer_id: '', site: '',
+    date_out: today(), return_date: '', advance: '', notes: '',
+    equipLines: [emptyLine()]
   });
 
   const load = useCallback(async () => {
     try {
-      const [r, c, e] = await Promise.all([api.get('/rentals'), api.get('/customers'), api.get('/equipment')]);
+      const [r, c, e] = await Promise.all([
+        api.get('/rentals'), api.get('/customers'), api.get('/equipment')
+      ]);
       setItems(r.data); setCustomers(c.data); setEquipment(e.data);
     } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { socket.on('refresh', load); return () => socket.off('refresh', load); }, [load]);
 
+  // Compute total daily rate from all equipment lines
+  const totalDailyRate = (lines) =>
+    lines.reduce((sum, l) => sum + (Number(l.qty || 1) * Number(l.daily_rate || 0)), 0);
+
   const openAdd = () => {
-    setForm({ customer_id: '', equipment_id: '', site: '', date_out: today(), return_date: '', daily_rate: '', deposit: '', notes: '' });
+    setForm({ customer_id: '', site: '', date_out: today(), return_date: '', advance: '', notes: '', equipLines: [emptyLine()] });
     setModal('add');
+  };
+
+  const openEdit = (r) => {
+    // Parse stored equipment_lines JSON or fall back to single equipment
+    let equipLines;
+    try {
+      equipLines = r.equipment_lines ? JSON.parse(r.equipment_lines) : [{ equipment_id: r.equipment_id, qty: 1, daily_rate: r.daily_rate }];
+    } catch { equipLines = [emptyLine()]; }
+    setForm({ customer_id: r.customer_id, site: r.site, date_out: r.date_out, return_date: r.return_date, advance: r.deposit, notes: r.notes || '', equipLines });
+    setModal(r);
   };
 
   const save = async () => {
     try {
-      if (modal === 'add') await api.post('/rentals', form);
-      else await api.put(`/rentals/${modal.id}`, form);
+      const lines = form.equipLines.filter(l => l.equipment_id);
+      const payload = {
+        customer_id: form.customer_id,
+        equipment_id: lines[0]?.equipment_id || '',   // keep for DB compatibility
+        site: form.site,
+        date_out: form.date_out,
+        return_date: form.return_date,
+        daily_rate: totalDailyRate(lines),             // total per day
+        deposit: form.advance || 0,
+        notes: form.notes,
+        equipment_lines: JSON.stringify(lines),        // full detail stored as JSON
+      };
+      if (modal === 'add') await api.post('/rentals', payload);
+      else await api.put(`/rentals/${modal.id}`, payload);
       setModal(null); load();
     } catch {}
   };
 
-  const markReturned = async (id, actualReturn) => {
-    try { await api.patch(`/rentals/${id}/return`, { actual_return: actualReturn }); setRetModal(null); load(); } catch {}
+  const markReturnedAndPay = async (rental, returnData) => {
+    try {
+      await api.patch(`/rentals/${rental.id}/return`, { actual_return: returnData.actual_return });
+      await api.post('/payments', {
+        rental_id: rental.id,
+        total_bill: returnData.total_bill,
+        amt_paid: returnData.amt_paid,
+        pay_date: returnData.actual_return,
+        notes: returnData.notes,
+      });
+      setRetModal(null); load();
+    } catch {}
   };
 
   const del = async id => {
@@ -632,6 +675,13 @@ function Rentals() {
     if (now > ret) return 'overdue';
     if ((ret - now) / 86400000 <= 3) return 'dueSoon';
     return 'out';
+  };
+
+  // Format date from ISO to DD-MM-YYYY
+  const fmtDate = d => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    return `${String(dt.getDate()).padStart(2,'0')}-${String(dt.getMonth()+1).padStart(2,'0')}-${dt.getFullYear()}`;
   };
 
   let filtered = items.map(r => ({ ...r, status: computeStatus(r) }));
@@ -648,7 +698,7 @@ function Rentals() {
     <div className="space-y-4">
       <div className="flex gap-2">
         <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder={t('searchPlaceholder')} /></div>
-        <Btn onClick={openAdd}>+ Add</Btn>
+        <Btn onClick={openAdd}>+ New</Btn>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -662,50 +712,160 @@ function Rentals() {
 
       {filtered.length === 0
         ? <EmptyState icon="📦" text={t('noData')} sub={t('tapAdd')} />
-        : filtered.map(r => (
-          <Card key={r.id} className="p-4">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <p className="font-semibold text-gray-900">{r.customer_name}</p>
-                <p className="text-xs text-gray-500">{r.equipment_name} · {r.site}</p>
-              </div>
-              <span className={`text-xs font-medium px-2 py-1 rounded-lg ${badge(r.status)}`}>{t(r.status)}</span>
-            </div>
-            <div className="flex gap-4 text-xs text-gray-500">
-              <span>📅 Out: {r.date_out}</span>
-              <span>🔙 Due: {r.return_date}</span>
-            </div>
-            {r.daily_rate && <p className="text-xs text-indigo-600 font-medium mt-1">{fmt(r.daily_rate)}/day</p>}
-            <div className="flex gap-1 mt-3 flex-wrap">
-              {r.status !== 'returned' && (
-                <Btn size="sm" variant="success" onClick={() => setRetModal(r)}>✓ {t('markReturned')}</Btn>
-              )}
-              <Btn size="sm" variant="outline" onClick={() => { setForm({ ...r }); setModal(r); }}>✏️</Btn>
-              {isOwner && <Btn size="sm" variant="danger" onClick={() => del(r.id)}>🗑️</Btn>}
-            </div>
-          </Card>
-        ))}
+        : filtered.map(r => {
+          const advance = Number(r.deposit || 0);
+          const days = r.actual_return
+            ? daysBetween(r.date_out?.split('T')[0], r.actual_return?.split('T')[0])
+            : daysBetween(r.date_out?.split('T')[0], today());
+          const totalRate = Number(r.daily_rate || 0);
+          const estimatedBill = days * totalRate;
+          const balance = estimatedBill - advance;
 
+          // Parse equipment lines if available
+          let equipLines = [];
+          try { equipLines = r.equipment_lines ? JSON.parse(r.equipment_lines) : []; } catch {}
+          const hasMultiple = equipLines.length > 1;
+
+          return (
+            <Card key={r.id} className="p-4">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-semibold text-gray-900">{r.customer_name}</p>
+                  <p className="text-xs text-gray-500">📍 {r.site}</p>
+                </div>
+                <span className={`text-xs font-medium px-2 py-1 rounded-lg ${badge(r.status)}`}>{t(r.status)}</span>
+              </div>
+
+              {/* Equipment list */}
+              {hasMultiple ? (
+                <div className="bg-gray-50 rounded-xl p-2 mb-2 space-y-1">
+                  {equipLines.map((l, i) => {
+                    const eq = equipment.find(e => String(e.id) === String(l.equipment_id));
+                    const lineRate = Number(l.qty || 1) * Number(l.daily_rate || 0);
+                    return (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-600">🔧 {eq?.name || 'Equipment'} × {l.qty}</span>
+                        <span className="text-indigo-600 font-medium">{fmt(l.daily_rate)}/unit → {fmt(lineRate)}/day</span>
+                      </div>
+                    );
+                  })}
+                  <div className="border-t border-gray-200 pt-1 flex justify-between text-xs font-bold">
+                    <span className="text-gray-700">Total per day</span>
+                    <span className="text-indigo-700">{fmt(totalRate)}/day</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mb-2">🔧 {r.equipment_name} · {fmt(totalRate)}/day</p>
+              )}
+
+              {/* Dates - clean format */}
+              <div className="flex gap-3 text-xs text-gray-500 mb-2">
+                <span>📅 Out: {fmtDate(r.date_out)}</span>
+                <span>🔙 Due: {fmtDate(r.return_date)}</span>
+                <span className="text-gray-400">{days} days so far</span>
+              </div>
+
+              {/* Bill summary */}
+              {totalRate > 0 && (
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  <div className="bg-gray-50 rounded-xl p-2">
+                    <p className="text-[10px] text-gray-400">Est. Bill</p>
+                    <p className="font-bold text-xs">{fmt(estimatedBill)}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-xl p-2">
+                    <p className="text-[10px] text-gray-400">Advance</p>
+                    <p className="font-bold text-xs text-green-700">{fmt(advance)}</p>
+                  </div>
+                  <div className={`rounded-xl p-2 ${balance > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                    <p className="text-[10px] text-gray-400">Balance</p>
+                    <p className={`font-bold text-xs ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {fmt(Math.max(0, balance))}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-1 flex-wrap">
+                {r.status !== 'returned' && (
+                  <Btn size="sm" variant="success" onClick={() => setRetModal(r)}>✓ Return & Settle</Btn>
+                )}
+                <Btn size="sm" variant="outline" onClick={() => openEdit(r)}>✏️ Edit</Btn>
+                {isOwner && <Btn size="sm" variant="danger" onClick={() => del(r.id)}>🗑️</Btn>}
+              </div>
+            </Card>
+          );
+        })}
+
+      {/* New / Edit Modal */}
       {modal && (
-        <Modal title={modal === 'add' ? t('newRental') : t('edit')} onClose={() => setModal(null)}>
+        <Modal title={modal === 'add' ? t('newRental') : 'Edit Rental'} onClose={() => setModal(null)}>
           <Select label={t('customer')} value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
             <option value="">Select customer</option>
-            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.village}</option>)}
           </Select>
-          <Select label={t('equipRented')} value={form.equipment_id} onChange={e => setForm(f => ({ ...f, equipment_id: e.target.value }))}>
-            <option value="">Select equipment</option>
-            {equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </Select>
-          <Input label={t('site')} value={form.site} onChange={e => setForm(f => ({ ...f, site: e.target.value }))} />
+
+          <Input label="Site / Project location" value={form.site} onChange={e => setForm(f => ({ ...f, site: e.target.value }))} placeholder="e.g. Anantapur bypass road" />
+
           <div className="grid grid-cols-2 gap-2">
-            <Input label={t('dateOut')} type="date" value={form.date_out} onChange={e => setForm(f => ({ ...f, date_out: e.target.value }))} />
-            <Input label={t('returnDate')} type="date" value={form.return_date} onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} />
+            <Input label="Date sent out" type="date" value={form.date_out} onChange={e => setForm(f => ({ ...f, date_out: e.target.value }))} />
+            <Input label="Expected return" type="date" value={form.return_date} onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input label={t('dailyRate')} type="number" value={form.daily_rate} onChange={e => setForm(f => ({ ...f, daily_rate: e.target.value }))} />
-            <Input label={t('deposit')} type="number" value={form.deposit} onChange={e => setForm(f => ({ ...f, deposit: e.target.value }))} />
+
+          {/* Equipment lines */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Equipment & Rates</p>
+            <div className="space-y-2">
+              {form.equipLines.map((line, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-medium text-gray-600">Equipment {i + 1}</span>
+                    {form.equipLines.length > 1 && (
+                      <button onClick={() => setForm(f => ({ ...f, equipLines: f.equipLines.filter((_, idx) => idx !== i) }))}
+                        className="text-red-400 text-xs hover:text-red-600">✕ Remove</button>
+                    )}
+                  </div>
+                  <Select value={line.equipment_id}
+                    onChange={e => {
+                      const selected = equipment.find(eq => String(eq.id) === e.target.value);
+                      setForm(f => ({ ...f, equipLines: f.equipLines.map((l, idx) =>
+                        idx === i ? { ...l, equipment_id: e.target.value, daily_rate: selected?.cost_per_unit || '' } : l
+                      )}));
+                    }}>
+                    <option value="">Select equipment</option>
+                    {equipment.map(e => <option key={e.id} value={e.id}>{e.name} — {fmt(e.cost_per_unit)}/day</option>)}
+                  </Select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input label="Qty" type="number" min={1} value={line.qty}
+                      onChange={e => setForm(f => ({ ...f, equipLines: f.equipLines.map((l, idx) => idx === i ? { ...l, qty: e.target.value } : l) }))} />
+                    <Input label="Rate/unit/day (₹)" type="number" value={line.daily_rate}
+                      onChange={e => setForm(f => ({ ...f, equipLines: f.equipLines.map((l, idx) => idx === i ? { ...l, daily_rate: e.target.value } : l) }))} />
+                  </div>
+                  {line.qty > 0 && line.daily_rate > 0 && (
+                    <p className="text-xs text-indigo-600 font-medium">
+                      → {line.qty} × {fmt(line.daily_rate)} = {fmt(Number(line.qty) * Number(line.daily_rate))}/day
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setForm(f => ({ ...f, equipLines: [...f.equipLines, emptyLine()] }))}
+              className="mt-2 text-xs text-indigo-600 font-medium hover:text-indigo-800">
+              + Add another equipment
+            </button>
           </div>
-          <Textarea label={t('notes')} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+
+          {/* Total daily rate preview */}
+          {totalDailyRate(form.equipLines) > 0 && (
+            <div className="bg-indigo-50 rounded-xl px-3 py-2 text-sm font-bold text-indigo-700 flex justify-between">
+              <span>Total per day</span>
+              <span>{fmt(totalDailyRate(form.equipLines))}/day</span>
+            </div>
+          )}
+
+          <Input label="Advance paid (₹)" type="number" value={form.advance} onChange={e => setForm(f => ({ ...f, advance: e.target.value }))} placeholder="0" />
+          <Textarea label="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+
           <div className="flex gap-2 pt-1">
             <Btn onClick={save} className="flex-1">{t('save')}</Btn>
             <Btn variant="outline" onClick={() => setModal(null)} className="flex-1">{t('cancel')}</Btn>
@@ -713,62 +873,113 @@ function Rentals() {
         </Modal>
       )}
 
-      {retModal && <ReturnModal rental={retModal} onClose={() => setRetModal(null)} onSave={markReturned} t={t} />}
+      {retModal && (
+        <ReturnSettleModal rental={retModal} onClose={() => setRetModal(null)} onSave={markReturnedAndPay} t={t} />
+      )}
     </div>
   );
 }
-
-function ReturnModal({ rental, onClose, onSave, t }) {
+// ── Return & Settle Modal ─────────────────────────────────────
+function ReturnSettleModal({ rental, onClose, onSave, t }) {
+  const advance = Number(rental.deposit || 0);
   const [date, setDate] = useState(today());
+  const [extraPaid, setExtraPaid] = useState('');
+  const [notes, setNotes] = useState('');
+
   const days = daysBetween(rental.date_out, date);
-  const bill = days * Number(rental.daily_rate || 0);
+  const totalBill = days * Number(rental.daily_rate || 0);
+  const remaining = Math.max(0, totalBill - advance);
+  const totalPaid = advance + Number(extraPaid || 0);
+  const balance = totalBill - totalPaid;
+
   return (
-    <Modal title={t('markReturned')} onClose={onClose}>
-      <p className="text-sm text-gray-600">Customer: <strong>{rental.customer_name}</strong></p>
-      <p className="text-sm text-gray-600">Equipment: <strong>{rental.equipment_name}</strong></p>
-      <Input label={t('actualReturn')} type="date" value={date} onChange={e => setDate(e.target.value)} />
-      <div className="bg-indigo-50 rounded-xl p-3 text-sm">
-        <div className="flex justify-between"><span className="text-gray-600">Days out:</span><span className="font-medium">{days}</span></div>
-        <div className="flex justify-between mt-1"><span className="text-gray-600">{t('totalBill')}:</span><span className="font-bold text-indigo-700">{fmt(bill)}</span></div>
+    <Modal title="✓ Return & Settle Payment" onClose={onClose}>
+      <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1">
+        <div className="flex justify-between">
+          <span className="text-gray-500">Customer</span>
+          <span className="font-semibold">{rental.customer_name}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Equipment</span>
+          <span className="font-medium">{rental.equipment_name}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Site</span>
+          <span className="font-medium">{rental.site}</span>
+        </div>
       </div>
-      <div className="flex gap-2">
-        <Btn onClick={() => onSave(rental.id, date)} variant="success" className="flex-1">✓ Confirm Return</Btn>
+
+      <Input label="Actual return date" type="date" value={date} onChange={e => setDate(e.target.value)} />
+
+      <div className="bg-indigo-50 rounded-xl p-3 space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-600">Days out</span>
+          <span className="font-bold">{days} days</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-600">Rate</span>
+          <span className="font-medium">{fmt(rental.daily_rate)}/day</span>
+        </div>
+        <div className="border-t border-indigo-100 pt-2 flex justify-between">
+          <span className="text-gray-700 font-medium">Total Bill</span>
+          <span className="font-bold text-indigo-700 text-base">{fmt(totalBill)}</span>
+        </div>
+        <div className="flex justify-between text-green-700">
+          <span>Advance already paid</span>
+          <span className="font-bold">− {fmt(advance)}</span>
+        </div>
+        <div className="border-t border-indigo-100 pt-2 flex justify-between">
+          <span className="text-gray-700 font-medium">Remaining to collect</span>
+          <span className={`font-bold text-base ${remaining > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmt(remaining)}</span>
+        </div>
+      </div>
+
+      <Input
+        label="Amount collected now (₹)"
+        type="number"
+        value={extraPaid}
+        onChange={e => setExtraPaid(e.target.value)}
+        placeholder={`Remaining: ${fmt(remaining)}`}
+      />
+
+      {extraPaid !== '' && (
+        <div className={`rounded-xl px-3 py-2 text-sm font-medium flex justify-between
+          ${balance <= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          <span>{balance <= 0 ? '✅ Fully settled' : '⚠️ Still pending'}</span>
+          <span>{balance <= 0 ? 'Clear!' : fmt(balance) + ' pending'}</span>
+        </div>
+      )}
+
+      <Textarea label="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. paid by cash" />
+
+      <div className="flex gap-2 pt-1">
+        <Btn onClick={() => onSave(rental, { actual_return: date, total_bill: totalBill, amt_paid: totalPaid, notes })} variant="success" className="flex-1">✓ Confirm & Save</Btn>
         <Btn variant="outline" onClick={onClose} className="flex-1">{t('cancel')}</Btn>
       </div>
     </Modal>
   );
 }
 
-// ── Payments ─────────────────────────────────────────────────
+// ── Payments (history only) ───────────────────────────────────
 function Payments() {
   const { t } = useLang();
   const { isOwner } = useAuth();
   const [items, setItems] = useState([]);
-  const [rentals, setRentals] = useState([]);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({ rental_id: '', total_bill: '', amt_paid: '', pay_date: today(), notes: '' });
 
   const load = useCallback(async () => {
-    try {
-      const [p, r] = await Promise.all([api.get('/payments'), api.get('/rentals')]);
-      setItems(p.data); setRentals(r.data);
-    } catch {}
+    try { const r = await api.get('/payments'); setItems(r.data); } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { socket.on('refresh', load); return () => socket.off('refresh', load); }, [load]);
 
-  const openAdd = () => { setForm({ rental_id: '', total_bill: '', amt_paid: '', pay_date: today(), notes: '' }); setModal('add'); };
-
-  const save = async () => {
-    try {
-      await api.post('/payments', form);
-      setModal(null); load();
-    } catch {}
+  const del = async id => {
+    if (!window.confirm(t('confirmDelete'))) return;
+    try { await api.delete(`/payments/${id}`); load(); } catch {}
   };
 
   const payStatus = p => {
-    const bal = p.total_bill - p.amt_paid;
+    const bal = Number(p.total_bill) - Number(p.amt_paid);
     if (bal <= 0) return 'paid';
     if (p.amt_paid > 0) return 'partial';
     return 'pending';
@@ -778,63 +989,61 @@ function Payments() {
     (i.customer_name || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  const totalCollected = filtered.reduce((s, p) => s + Number(p.amt_paid || 0), 0);
+  const totalPending = filtered.reduce((s, p) => s + Math.max(0, Number(p.total_bill || 0) - Number(p.amt_paid || 0)), 0);
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder={t('searchPlaceholder')} /></div>
-        <Btn onClick={openAdd}>+ Add</Btn>
+      <SearchBar value={search} onChange={setSearch} placeholder={t('searchPlaceholder')} />
+
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-3 text-center">
+          <p className="text-xs text-gray-500">Total Collected</p>
+          <p className="font-bold text-green-600 text-lg">{fmt(totalCollected)}</p>
+        </Card>
+        <Card className="p-3 text-center">
+          <p className="text-xs text-gray-500">Still Pending</p>
+          <p className="font-bold text-red-500 text-lg">{fmt(totalPending)}</p>
+        </Card>
       </div>
+
+      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide px-1">Payment History</p>
+
       {filtered.length === 0
-        ? <EmptyState icon="💰" text={t('noData')} sub={t('tapAdd')} />
+        ? <EmptyState icon="💰" text="No payments yet" sub="Payments appear here after marking rentals as returned" />
         : filtered.map(p => {
           const status = payStatus(p);
-          const bal = p.total_bill - p.amt_paid;
+          const bal = Number(p.total_bill) - Number(p.amt_paid);
           return (
             <Card key={p.id} className="p-4">
-              <div className="flex justify-between items-start">
+              <div className="flex justify-between items-start mb-2">
                 <div>
                   <p className="font-semibold text-gray-900">{p.customer_name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{p.pay_date}</p>
+                  <p className="text-xs text-gray-500">{p.pay_date}</p>
                 </div>
                 <span className={`text-xs font-medium px-2 py-1 rounded-lg ${badge(status)}`}>{t(status)}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+              <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="bg-gray-50 rounded-xl p-2">
-                  <p className="text-xs text-gray-500">Bill</p>
-                  <p className="font-bold text-sm">{fmt(p.total_bill)}</p>
+                  <p className="text-[10px] text-gray-400">Total Bill</p>
+                  <p className="font-bold text-xs">{fmt(p.total_bill)}</p>
                 </div>
                 <div className="bg-green-50 rounded-xl p-2">
-                  <p className="text-xs text-gray-500">Paid</p>
-                  <p className="font-bold text-sm text-green-700">{fmt(p.amt_paid)}</p>
+                  <p className="text-[10px] text-gray-400">Collected</p>
+                  <p className="font-bold text-xs text-green-700">{fmt(p.amt_paid)}</p>
                 </div>
                 <div className={`rounded-xl p-2 ${bal > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                  <p className="text-xs text-gray-500">Balance</p>
-                  <p className={`font-bold text-sm ${bal > 0 ? 'text-red-600' : 'text-gray-400'}`}>{fmt(bal)}</p>
+                  <p className="text-[10px] text-gray-400">Balance</p>
+                  <p className={`font-bold text-xs ${bal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                    {bal > 0 ? fmt(bal) : '✓ Clear'}
+                  </p>
                 </div>
               </div>
-              {p.notes && <p className="text-xs text-gray-400 mt-2 italic">{p.notes}</p>}
+              {p.notes && <p className="text-xs text-gray-400 mt-2 italic">📝 {p.notes}</p>}
+              {isOwner && <div className="mt-2"><Btn size="sm" variant="danger" onClick={() => del(p.id)}>🗑️</Btn></div>}
             </Card>
           );
         })}
-
-      {modal && (
-        <Modal title={t('recPayment')} onClose={() => setModal(null)}>
-          <Select label="Rental" value={form.rental_id} onChange={e => setForm(f => ({ ...f, rental_id: e.target.value }))}>
-            <option value="">Select rental</option>
-            {rentals.map(r => <option key={r.id} value={r.id}>{r.customer_name} — {r.equipment_name} ({r.site})</option>)}
-          </Select>
-          <div className="grid grid-cols-2 gap-2">
-            <Input label={t('totalBill')} type="number" value={form.total_bill} onChange={e => setForm(f => ({ ...f, total_bill: e.target.value }))} />
-            <Input label={t('amtPaid')} type="number" value={form.amt_paid} onChange={e => setForm(f => ({ ...f, amt_paid: e.target.value }))} />
-          </div>
-          <Input label={t('payDate')} type="date" value={form.pay_date} onChange={e => setForm(f => ({ ...f, pay_date: e.target.value }))} />
-          <Textarea label={t('notes')} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-          <div className="flex gap-2 pt-1">
-            <Btn onClick={save} className="flex-1">{t('save')}</Btn>
-            <Btn variant="outline" onClick={() => setModal(null)} className="flex-1">{t('cancel')}</Btn>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
