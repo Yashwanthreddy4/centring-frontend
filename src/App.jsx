@@ -185,6 +185,7 @@ const NAV = [
   { key: 'customers', icon: '👥' },
   { key: 'rentals', icon: '📦' },
   { key: 'payments', icon: '💰' },
+  { key: 'sales', icon: '🛒' },
   { key: 'maintenance', icon: '🛠️' },
   { key: 'reports', icon: '📈' },
   { key: 'users', icon: '👤' },
@@ -580,6 +581,7 @@ function Customers() {
 }
 
 
+
 // ── Rentals ──────────────────────────────────────────────────
 // equipLines = [{ equipment_id, qty, daily_rate }]
 const emptyLine = () => ({ equipment_id: '', qty: 1, daily_rate: '' });
@@ -826,14 +828,9 @@ function Rentals() {
                     )}
                   </div>
                   <Select value={line.equipment_id}
-                    onChange={e => {
-                      const selected = equipment.find(eq => String(eq.id) === e.target.value);
-                      setForm(f => ({ ...f, equipLines: f.equipLines.map((l, idx) =>
-                        idx === i ? { ...l, equipment_id: e.target.value, daily_rate: selected?.cost_per_unit || '' } : l
-                      )}));
-                    }}>
+                    onChange={e => setForm(f => ({ ...f, equipLines: f.equipLines.map((l, idx) => idx === i ? { ...l, equipment_id: e.target.value } : l) }))}>
                     <option value="">Select equipment</option>
-                    {equipment.map(e => <option key={e.id} value={e.id}>{e.name} — {fmt(e.cost_per_unit)}/day</option>)}
+                    {equipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </Select>
                   <div className="grid grid-cols-2 gap-2">
                     <Input label="Qty" type="number" min={1} value={line.qty}
@@ -879,6 +876,8 @@ function Rentals() {
     </div>
   );
 }
+
+
 // ── Return & Settle Modal ─────────────────────────────────────
 function ReturnSettleModal({ rental, onClose, onSave, t }) {
   const advance = Number(rental.deposit || 0);
@@ -1044,6 +1043,209 @@ function Payments() {
             </Card>
           );
         })}
+    </div>
+  );
+}
+
+
+// ── Sales ─────────────────────────────────────────────────────
+function Sales() {
+  const { t } = useLang();
+  const { isOwner } = useAuth();
+  const [items, setItems] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({
+    customer_id: '', item_name: '', qty: '', rate_per_unit: '',
+    amt_paid: '', sale_date: today(), notes: ''
+  });
+
+  const load = useCallback(async () => {
+    try {
+      const [s, c] = await Promise.all([api.get('/sales'), api.get('/customers')]);
+      setItems(s.data); setCustomers(c.data);
+    } catch {}
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { socket.on('refresh', load); return () => socket.off('refresh', load); }, [load]);
+
+  const openAdd = () => {
+    setForm({ customer_id: '', item_name: '', qty: '', rate_per_unit: '', amt_paid: '', sale_date: today(), notes: '' });
+    setModal('add');
+  };
+
+  const openEdit = s => {
+    setForm({ customer_id: s.customer_id, item_name: s.item_name, qty: s.qty, rate_per_unit: s.rate_per_unit, amt_paid: s.amt_paid, sale_date: s.sale_date, notes: s.notes || '' });
+    setModal(s);
+  };
+
+  const save = async () => {
+    try {
+      const total = Number(form.qty || 0) * Number(form.rate_per_unit || 0);
+      const payload = { ...form, total_amount: total };
+      if (modal === 'add') await api.post('/sales', payload);
+      else await api.put(`/sales/${modal.id}`, payload);
+      setModal(null); load();
+    } catch {}
+  };
+
+  const del = async id => {
+    if (!window.confirm(t('confirmDelete'))) return;
+    try { await api.delete(`/sales/${id}`); load(); } catch {}
+  };
+
+  const payStatus = s => {
+    const bal = Number(s.total_amount) - Number(s.amt_paid);
+    if (bal <= 0) return 'paid';
+    if (s.amt_paid > 0) return 'partial';
+    return 'pending';
+  };
+
+  let filtered = items;
+  if (filter !== 'all') filtered = filtered.filter(s => payStatus(s) === filter);
+  if (search) filtered = filtered.filter(s =>
+    (s.customer_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (s.item_name || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalSales = filtered.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+  const totalCollected = filtered.reduce((sum, s) => sum + Number(s.amt_paid || 0), 0);
+  const totalPending = totalSales - totalCollected;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder={t('searchPlaceholder')} /></div>
+        <Btn onClick={openAdd}>+ Sale</Btn>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        {['all', 'paid', 'partial', 'pending'].map(tab => (
+          <button key={tab} onClick={() => setFilter(tab)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${filter === tab ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+            {tab === 'all' ? 'All' : t(tab)}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-2">
+        <Card className="p-3 text-center">
+          <p className="text-[10px] text-gray-400">Total Sales</p>
+          <p className="font-bold text-gray-800 text-sm">{fmt(totalSales)}</p>
+        </Card>
+        <Card className="p-3 text-center">
+          <p className="text-[10px] text-gray-400">Collected</p>
+          <p className="font-bold text-green-600 text-sm">{fmt(totalCollected)}</p>
+        </Card>
+        <Card className="p-3 text-center">
+          <p className="text-[10px] text-gray-400">Pending</p>
+          <p className="font-bold text-red-500 text-sm">{fmt(totalPending)}</p>
+        </Card>
+      </div>
+
+      {filtered.length === 0
+        ? <EmptyState icon="🛒" text="No sales yet" sub="Tap + Sale to record a sale" />
+        : filtered.map(s => {
+          const status = payStatus(s);
+          const bal = Number(s.total_amount) - Number(s.amt_paid);
+          return (
+            <Card key={s.id} className="p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-semibold text-gray-900">{s.customer_name}</p>
+                  <p className="text-xs text-gray-500">📅 {s.sale_date}</p>
+                </div>
+                <span className={`text-xs font-medium px-2 py-1 rounded-lg ${badge(status)}`}>{t(status)}</span>
+              </div>
+
+              {/* Item details */}
+              <div className="bg-gray-50 rounded-xl p-2 mb-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">🧱 {s.item_name}</span>
+                  <span className="text-gray-600">{s.qty} units × {fmt(s.rate_per_unit)}</span>
+                </div>
+                <div className="flex justify-between text-xs font-bold mt-1">
+                  <span className="text-gray-700">Total</span>
+                  <span className="text-indigo-700">{fmt(s.total_amount)}</span>
+                </div>
+              </div>
+
+              {/* Payment summary */}
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div className="bg-gray-50 rounded-xl p-2">
+                  <p className="text-[10px] text-gray-400">Bill</p>
+                  <p className="font-bold text-xs">{fmt(s.total_amount)}</p>
+                </div>
+                <div className="bg-green-50 rounded-xl p-2">
+                  <p className="text-[10px] text-gray-400">Paid</p>
+                  <p className="font-bold text-xs text-green-700">{fmt(s.amt_paid)}</p>
+                </div>
+                <div className={`rounded-xl p-2 ${bal > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                  <p className="text-[10px] text-gray-400">Balance</p>
+                  <p className={`font-bold text-xs ${bal > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                    {bal > 0 ? fmt(bal) : '✓ Clear'}
+                  </p>
+                </div>
+              </div>
+
+              {s.notes && <p className="text-xs text-gray-400 mb-2 italic">📝 {s.notes}</p>}
+
+              <div className="flex gap-1 flex-wrap">
+                <Btn size="sm" variant="outline" onClick={() => openEdit(s)}>✏️ Edit</Btn>
+                {isOwner && <Btn size="sm" variant="danger" onClick={() => del(s.id)}>🗑️</Btn>}
+              </div>
+            </Card>
+          );
+        })}
+
+      {/* Add / Edit Modal */}
+      {modal && (
+        <Modal title={modal === 'add' ? '🛒 New Sale' : 'Edit Sale'} onClose={() => setModal(null)}>
+          <Select label="Customer" value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
+            <option value="">Select customer</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.village}</option>)}
+          </Select>
+
+          <Input label="Item name" value={form.item_name} onChange={e => setForm(f => ({ ...f, item_name: e.target.value }))} placeholder="e.g. Bricks, Sand, Cement" />
+
+          <div className="grid grid-cols-2 gap-2">
+            <Input label="Quantity" type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} placeholder="e.g. 500" />
+            <Input label="Rate per unit (₹)" type="number" value={form.rate_per_unit} onChange={e => setForm(f => ({ ...f, rate_per_unit: e.target.value }))} placeholder="e.g. 8" />
+          </div>
+
+          {/* Auto calculated total */}
+          {form.qty > 0 && form.rate_per_unit > 0 && (
+            <div className="bg-indigo-50 rounded-xl px-3 py-2 text-sm font-bold text-indigo-700 flex justify-between">
+              <span>Total Amount</span>
+              <span>{fmt(Number(form.qty) * Number(form.rate_per_unit))}</span>
+            </div>
+          )}
+
+          <Input label="Amount paid (₹)" type="number" value={form.amt_paid} onChange={e => setForm(f => ({ ...f, amt_paid: e.target.value }))} placeholder="0" />
+
+          {/* Balance preview */}
+          {form.qty > 0 && form.rate_per_unit > 0 && form.amt_paid !== '' && (
+            <div className={`rounded-xl px-3 py-2 text-sm font-medium flex justify-between
+              ${(Number(form.qty) * Number(form.rate_per_unit)) - Number(form.amt_paid) <= 0
+                ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              <span>Balance</span>
+              <span>{fmt(Math.max(0, (Number(form.qty) * Number(form.rate_per_unit)) - Number(form.amt_paid)))}</span>
+            </div>
+          )}
+
+          <Input label="Sale date" type="date" value={form.sale_date} onChange={e => setForm(f => ({ ...f, sale_date: e.target.value }))} />
+          <Textarea label="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="e.g. delivered to site" />
+
+          <div className="flex gap-2 pt-1">
+            <Btn onClick={save} className="flex-1">{t('save')}</Btn>
+            <Btn variant="outline" onClick={() => setModal(null)} className="flex-1">{t('cancel')}</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1261,9 +1463,9 @@ function AppShell() {
 
   if (!user) return <LoginPage />;
 
-  const pages = { dashboard: Dashboard, equipment: Equipment, customers: Customers, rentals: Rentals, payments: Payments, maintenance: Maintenance, reports: Reports, users: Users };
+  const pages = { dashboard: Dashboard, equipment: Equipment, customers: Customers, rentals: Rentals, payments: Payments, sales: Sales, maintenance: Maintenance, reports: Reports, users: Users };
   const Page = pages[tab] || Dashboard;
-  const icons = { dashboard: '📊', equipment: '🔧', customers: '👥', rentals: '📦', payments: '💰', maintenance: '🛠️', reports: '📈', users: '👤' };
+  const icons = { dashboard: '📊', equipment: '🔧', customers: '👥', rentals: '📦', payments: '💰', sales: '🛒', maintenance: '🛠️', reports: '📈', users: '👤' };
 
   return (
     <div className="min-h-screen bg-gray-50">
