@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Centring Tracker</string>
+    <string name="title_activity_main">Centring Tracker</string>
+    <string name="package_name">com.centring.tracker</string>
+    <string name="custom_url_scheme">com.centring.tracker</string>
+</resources>

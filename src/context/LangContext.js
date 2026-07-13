@@ -31,7 +31,23 @@ const translations = {
     searchPlaceholder: 'Search...', perDay: '/day', units: 'units',
     confirmDelete: 'Are you sure you want to delete this?',
     onlineUsers: 'online', syncedJustNow: 'Synced just now',
-    newPwd: 'Password', ownerAccess: 'Owner access only'
+    newPwd: 'Password', ownerAccess: 'Owner access only',
+    sales: 'Sales', newSale: 'New Sale', itemName: 'Item Name', ratePerUnit: 'Rate per unit (₹)',
+    totalAmount: 'Total Amount', saleDate: 'Sale Date', totalSales: 'Total Sales',
+    collected: 'Collected', stillPending: 'Still Pending', noSales: 'No sales yet',
+    tapAddSale: 'Tap + Sale to record a sale', clear: 'Clear',
+    home: 'Home', more: 'More', dailyUse: 'Daily Use', setupAdmin: 'Setup & Admin',
+    quickActions: 'Quick Actions', overview: 'Overview', recentRentals: 'Recent Rentals',
+    viewAll: 'View all', overdueAlert: 'Overdue Rentals!', tapToCollect: 'Tap to view and collect',
+    goodMorning: 'Good Morning', goodAfternoon: 'Good Afternoon', goodEvening: 'Good Evening',
+    searchCustomer: 'Search customer by name or village...', noCustomerFound: 'No customer found',
+    speakTelugu: 'Speaking in Telugu...', switchToTelugu: 'Switch to తెలుగు', switchToEnglish: 'Switch to English',
+    returnSettle: 'Return & Settle', confirmSave: 'Confirm & Save', amountCollected: 'Amount collected now (₹)',
+    advancePaid: 'Advance paid (₹)', remaining: 'Remaining to collect', fullySettled: 'Fully settled',
+    stillPendingShort: 'Still pending', daysOut: 'Days out', rate: 'Rate', estBill: 'Est. Bill',
+    totalPerDay: 'Total per day', addEquipment: 'Add another equipment', equipAndRates: 'Equipment & Rates',
+    siteLocation: 'Site / Project location', dateSentOut: 'Date sent out', expectedReturn: 'Expected return',
+    paymentHistory: 'Payment History'
   },
   te: {
     appName: 'సెంట్రింగ్ ట్రాకర్', login: 'లాగిన్', username: 'యూజర్నేమ్', password: 'పాస్వర్డ్',
@@ -63,7 +79,23 @@ const translations = {
     searchPlaceholder: 'వెతకండి...', perDay: '/రోజు', units: 'యూనిట్లు',
     confirmDelete: 'ఖచ్చితంగా తొలగించాలా?',
     onlineUsers: 'ఆన్లైన్', syncedJustNow: 'ఇప్పుడే సమకాలీకరించబడింది',
-    newPwd: 'పాస్వర్డ్', ownerAccess: 'యజమాని మాత్రమే'
+    newPwd: 'పాస్వర్డ్', ownerAccess: 'యజమాని మాత్రమే',
+    sales: 'అమ్మకాలు', newSale: 'కొత్త అమ్మకం', itemName: 'వస్తువు పేరు', ratePerUnit: 'యూనిట్ ధర (₹)',
+    totalAmount: 'మొత్తం', saleDate: 'అమ్మిన తేదీ', totalSales: 'మొత్తం అమ్మకాలు',
+    collected: 'వసూలు చేసారు', stillPending: 'ఇంకా పెండింగ్', noSales: 'ఇంకా అమ్మకాలు లేవు',
+    tapAddSale: '+ అమ్మకం నొక్కి చేర్చండి', clear: 'క్లియర్',
+    home: 'హోమ్', more: 'మరిన్ని', dailyUse: 'రోజువారీ వాడకం', setupAdmin: 'సెటప్ & అడ్మిన్',
+    quickActions: 'త్వరిత చర్యలు', overview: 'అవలోకనం', recentRentals: 'ఇటీవలి అద్దెలు',
+    viewAll: 'అన్నీ చూడండి', overdueAlert: 'గడువు మించిన అద్దెలు!', tapToCollect: 'చూసి వసూలు చేయడానికి నొక్కండి',
+    goodMorning: 'శుభోదయం', goodAfternoon: 'శుభ మధ్యాహ్నం', goodEvening: 'శుభ సాయంత్రం',
+    searchCustomer: 'పేరు లేదా గ్రామం ద్వారా కస్టమర్‌ను వెతకండి...', noCustomerFound: 'కస్టమర్ కనుగొనబడలేదు',
+    speakTelugu: 'తెలుగులో మాట్లాడుతున్నారు...', switchToTelugu: 'తెలుగుకు మార్చండి', switchToEnglish: 'ఇంగ్లీష్‌కు మార్చండి',
+    returnSettle: 'తిరిగివచ్చి సెటిల్ చేయండి', confirmSave: 'నిర్ధారించి సేవ్ చేయండి', amountCollected: 'ఇప్పుడు వసూలు చేసిన మొత్తం (₹)',
+    advancePaid: 'అడ్వాన్స్ చెల్లించారు (₹)', remaining: 'వసూలు చేయవలసినది', fullySettled: 'పూర్తిగా సెటిల్ అయింది',
+    stillPendingShort: 'ఇంకా పెండింగ్', daysOut: 'వెళ్ళిన రోజులు', rate: 'రేటు', estBill: 'అంచనా బిల్లు',
+    totalPerDay: 'రోజుకు మొత్తం', addEquipment: 'మరో పరికరం చేర్చండి', equipAndRates: 'పరికరాలు & రేట్లు',
+    siteLocation: 'సైట్ / ప్రాజెక్ట్ స్థానం', dateSentOut: 'పంపిన తేదీ', expectedReturn: 'తిరిగి వచ్చే తేదీ',
+    paymentHistory: 'చెల్లింపుల చరిత్ర'
   }
 };
 
