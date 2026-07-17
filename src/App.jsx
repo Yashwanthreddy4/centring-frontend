@@ -1664,7 +1664,7 @@ function Sales() {
   const [filter, setFilter] = useState('all');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({
-    customer_id: '', item_name: '', qty: '', rate_per_unit: '',
+    customer_id: '', item_name: '', qty: '', rate_per_unit: '', purchase_price: '',
     amt_paid: '', sale_date: today(), notes: ''
   });
 
@@ -1678,19 +1678,19 @@ function Sales() {
   useEffect(() => { socket.on('refresh', load); return () => socket.off('refresh', load); }, [load]);
 
   const openAdd = () => {
-    setForm({ customer_id: '', item_name: '', qty: '', rate_per_unit: '', amt_paid: '', sale_date: today(), notes: '' });
+    setForm({ customer_id: '', item_name: '', qty: '', rate_per_unit: '', purchase_price: '', amt_paid: '', sale_date: today(), notes: '' });
     setModal('add');
   };
 
   const openEdit = s => {
-    setForm({ customer_id: s.customer_id, item_name: s.item_name, qty: s.qty, rate_per_unit: s.rate_per_unit, amt_paid: s.amt_paid, sale_date: s.sale_date, notes: s.notes || '' });
+    setForm({ customer_id: s.customer_id, item_name: s.item_name, qty: s.qty, rate_per_unit: s.rate_per_unit, purchase_price: s.purchase_price || '', amt_paid: s.amt_paid, sale_date: s.sale_date, notes: s.notes || '' });
     setModal(s);
   };
 
   const save = async () => {
     try {
       const total = Number(form.qty || 0) * Number(form.rate_per_unit || 0);
-      const payload = { ...form, total_amount: total };
+      const payload = { ...form, total_amount: total, purchase_price: form.purchase_price || 0 };
       if (modal === 'add') await api.post('/sales', payload);
       else await api.put(`/sales/${modal.id}`, payload);
       setModal(null); load();
@@ -1719,6 +1719,8 @@ function Sales() {
   const totalSales = filtered.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
   const totalCollected = filtered.reduce((sum, s) => sum + Number(s.amt_paid || 0), 0);
   const totalPending = totalSales - totalCollected;
+  const totalCost = filtered.reduce((sum, s) => sum + (Number(s.purchase_price || 0) * Number(s.qty || 0)), 0);
+  const totalProfit = totalSales - totalCost;
 
   return (
     <div className="space-y-4">
@@ -1738,18 +1740,22 @@ function Sales() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Card className="p-3 text-center">
-          <p className="text-[10px] text-gray-400">{t('totalSales')}</p>
+          <p className="text-[10px] text-gray-400">Revenue</p>
           <p className="font-bold text-gray-800 text-sm">{fmt(totalSales)}</p>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-[10px] text-gray-400">{t('collected')}</p>
+          <p className="text-[10px] text-gray-400">Collected</p>
           <p className="font-bold text-green-600 text-sm">{fmt(totalCollected)}</p>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-[10px] text-gray-400">{t('stillPending')}</p>
-          <p className="font-bold text-red-500 text-sm">{fmt(totalPending)}</p>
+          <p className="text-[10px] text-gray-400">Total Cost</p>
+          <p className="font-bold text-red-500 text-sm">{fmt(totalCost)}</p>
+        </Card>
+        <Card className="p-3 text-center bg-amber-50">
+          <p className="text-[10px] text-amber-600">Profit</p>
+          <p className="font-bold text-amber-600 text-sm">{fmt(totalProfit)}</p>
         </Card>
       </div>
 
@@ -1773,6 +1779,7 @@ function Sales() {
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-600">🧱 {s.item_name}</span>
                   <span className="text-gray-600">{s.qty} {t('units')} × {fmt(s.rate_per_unit)}</span>
+                  {s.purchase_price > 0 && <span className="text-green-600 font-medium">Profit: {fmt((s.rate_per_unit - s.purchase_price) * s.qty)}</span>}
                 </div>
                 <div className="flex justify-between text-xs font-bold mt-1">
                   <span className="text-gray-700">{t('totalAmount')}</span>
@@ -1818,13 +1825,28 @@ function Sales() {
           <div className="grid grid-cols-2 gap-2">
             <Input label={t('qty')} type="number" min={0} value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} placeholder="e.g. 500" />
             <Input label={t('ratePerUnit')} type="number" min={0} value={form.rate_per_unit} onChange={e => setForm(f => ({ ...f, rate_per_unit: e.target.value }))} placeholder="e.g. 8" />
+            <Input label="Purchase Price/unit (₹)" type="number" min={0} value={form.purchase_price} onChange={e => setForm(f => ({ ...f, purchase_price: e.target.value }))} placeholder="Cost to you" />
           </div>
 
           {/* Auto calculated total */}
           {form.qty > 0 && form.rate_per_unit > 0 && (
-            <div className="bg-indigo-50 rounded-xl px-3 py-2 text-sm font-bold text-indigo-700 flex justify-between">
-              <span>{t('totalAmount')}</span>
-              <span>{fmt(Number(form.qty) * Number(form.rate_per_unit))}</span>
+            <div className="space-y-2">
+              <div className="bg-indigo-50 rounded-xl px-3 py-2 text-sm font-bold text-indigo-700 flex justify-between">
+                <span>{t('totalAmount')}</span>
+                <span>{fmt(Number(form.qty) * Number(form.rate_per_unit))}</span>
+              </div>
+              {form.purchase_price > 0 && (
+                <div className="bg-green-50 rounded-xl px-3 py-2 text-sm font-bold text-green-700 flex justify-between">
+                  <span>Total Cost (buying)</span>
+                  <span>{fmt(Number(form.qty) * Number(form.purchase_price))}</span>
+                </div>
+              )}
+              {form.purchase_price > 0 && (
+                <div className="bg-amber-50 rounded-xl px-3 py-2 text-sm font-bold text-amber-700 flex justify-between">
+                  <span>Profit</span>
+                  <span>{fmt((Number(form.qty) * Number(form.rate_per_unit)) - (Number(form.qty) * Number(form.purchase_price)))}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -2045,7 +2067,7 @@ function Users() {
 }
 
 // ── Main App Shell ───────────────────────────────────────────
-function AppShell() {
+function AppShell() {f
   const { user, loading } = useAuth();
   const { t, lang, toggle } = useLang();
   const [tab, setTab] = useState('dashboard');
