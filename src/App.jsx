@@ -2067,7 +2067,7 @@ function Users() {
 }
 
 // ── Main App Shell ───────────────────────────────────────────
-function AppShell() {f
+function AppShell() {
   const { user, loading } = useAuth();
   const { t, lang, toggle } = useLang();
   const [tab, setTab] = useState('dashboard');
