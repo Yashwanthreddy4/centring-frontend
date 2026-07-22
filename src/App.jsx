@@ -532,8 +532,7 @@ function CustomerPicker({ customers, value, onChange }) {
         const { SpeechRecognition } = window.Capacitor.Plugins;
         await SpeechRecognition.requestPermissions();
         setListening(true);
-        // eslint-disable-next-line no-unused-vars
-      await SpeechRecognition.start({
+        const result = await SpeechRecognition.start({
           language: 'te-IN', maxResults: 1, partialResults: false, popup: true,
         });
         setListening(false);
@@ -664,8 +663,7 @@ function useVoiceInput(onResult) {
       if (!available.available) { alert('Voice not available'); return; }
       await SpeechRecognition.requestPermissions();
       setListening(field);
-      // eslint-disable-next-line no-unused-vars
-      await SpeechRecognition.start({
+      const result = await SpeechRecognition.start({
         language: 'te-IN',
         maxResults: 1,
         partialResults: false,
