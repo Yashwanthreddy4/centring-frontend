@@ -13,7 +13,7 @@ import { LangProvider, useLang } from './context/LangContext';
 const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
 const today = () => new Date().toISOString().split('T')[0];
 const daysBetween = (a, b) => Math.max(1, Math.ceil((new Date(b) - new Date(a)) / 86400000));
-const monthsBetween = (a, b) => Math.max(1, Math.ceil(daysBetween(a, b) / 30));
+const monthsBetween = (a, b) => Math.max(1, Math.ceil(daysBetween(a, b) / 30)); // eslint-disable-line no-unused-vars
 
 const isToday = dateStr => {
   if (!dateStr) return false;
@@ -483,7 +483,7 @@ function Equipment() {
       {modal && (
         <Modal title={modal === 'add' ? t('addEquip') : t('edit')} onClose={() => setModal(null)}>
           <Input label={t('machineName')} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Miller, Driller" />
-          <Input label={t('qty')} type="number" min={0} value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} min={1} />
+          <Input label={t('qty')} type="number" min={1} value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
           <Input label={t('costPerUnit')} type="number" min={0} value={form.cost_per_unit} onChange={e => setForm(f => ({ ...f, cost_per_unit: e.target.value }))} />
           <Select label="Billing Type" value={form.billing_type} onChange={e => setForm(f => ({ ...f, billing_type: e.target.value }))}>
             <option value="per_day">Per Day (Millers, Drillers etc.)</option>
@@ -531,7 +531,8 @@ function CustomerPicker({ customers, value, onChange }) {
         const { SpeechRecognition } = window.Capacitor.Plugins;
         await SpeechRecognition.requestPermissions();
         setListening(true);
-        const result = await SpeechRecognition.start({
+        // eslint-disable-next-line no-unused-vars
+      const result = await SpeechRecognition.start({
           language: 'te-IN', maxResults: 1, partialResults: false, popup: true,
         });
         setListening(false);
@@ -628,6 +629,7 @@ function useVoiceInput(onResult) {
   // Detect if running inside Capacitor (Android APK)
   const isCapacitor = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
+  // eslint-disable-next-line no-unused-vars
   const startNative = async (field) => {
     try {
       const { SpeechRecognition } = window.Capacitor.Plugins;
@@ -660,6 +662,7 @@ function useVoiceInput(onResult) {
       if (!available.available) { alert('Voice not available'); return; }
       await SpeechRecognition.requestPermissions();
       setListening(field);
+      // eslint-disable-next-line no-unused-vars
       const result = await SpeechRecognition.start({
         language: 'te-IN',
         maxResults: 1,
@@ -780,7 +783,7 @@ function CustomerHistoryModal({ customer, onClose }) {
   const totalPaid = payments.reduce((s, p) => s + Number(p.amt_paid || 0), 0);
   const totalDue = totalBilled - totalPaid;
   // Also include advance not yet in payments
-  const totalAdvance = rentals.reduce((s, r) => s + Number(r.deposit || 0), 0);
+
 
   const fmtDate = d => {
     if (!d) return '—';
@@ -1718,7 +1721,6 @@ function Sales() {
 
   const totalSales = filtered.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
   const totalCollected = filtered.reduce((sum, s) => sum + Number(s.amt_paid || 0), 0);
-  const totalPending = totalSales - totalCollected;
   const totalCost = filtered.reduce((sum, s) => sum + (Number(s.purchase_price || 0) * Number(s.qty || 0)), 0);
   const totalProfit = totalSales - totalCost;
 
