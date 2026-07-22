@@ -13,6 +13,7 @@ import { LangProvider, useLang } from './context/LangContext';
 const fmt = (n) => '₹' + Number(n || 0).toLocaleString('en-IN');
 const today = () => new Date().toISOString().split('T')[0];
 const daysBetween = (a, b) => Math.max(1, Math.ceil((new Date(b) - new Date(a)) / 86400000));
+// eslint-disable-next-line no-unused-vars
 const monthsBetween = (a, b) => Math.max(1, Math.ceil(daysBetween(a, b) / 30)); // eslint-disable-line no-unused-vars
 
 const isToday = dateStr => {
@@ -532,7 +533,7 @@ function CustomerPicker({ customers, value, onChange }) {
         await SpeechRecognition.requestPermissions();
         setListening(true);
         // eslint-disable-next-line no-unused-vars
-      const result = await SpeechRecognition.start({
+      await SpeechRecognition.start({
           language: 'te-IN', maxResults: 1, partialResults: false, popup: true,
         });
         setListening(false);
@@ -630,6 +631,7 @@ function useVoiceInput(onResult) {
   const isCapacitor = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
   // eslint-disable-next-line no-unused-vars
+  // eslint-disable-next-line no-unused-vars
   const startNative = async (field) => {
     try {
       const { SpeechRecognition } = window.Capacitor.Plugins;
@@ -663,7 +665,7 @@ function useVoiceInput(onResult) {
       await SpeechRecognition.requestPermissions();
       setListening(field);
       // eslint-disable-next-line no-unused-vars
-      const result = await SpeechRecognition.start({
+      await SpeechRecognition.start({
         language: 'te-IN',
         maxResults: 1,
         partialResults: false,
